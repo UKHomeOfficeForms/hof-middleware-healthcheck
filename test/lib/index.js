@@ -13,7 +13,7 @@ const resolvedPromiseStub = sinon.stub().returns(new Promise(resolve => resolve(
   }))));
 const resolvedFailedPromiseStub = sinon.stub().returns(
   new Promise(resolve => resolve(JSON.stringify({
-    statusCode: '500'
+    statusCode: '400'
   })))
 );
 const rejectedPromiseStub = sinon.stub().returns(
