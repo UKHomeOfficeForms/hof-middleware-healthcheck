@@ -19,7 +19,7 @@ const healthcheck = require('hof-middleware-healthcheck');
 app.get(healthcheck(config.health));
 ```
 
-Confiugure the healthcheck endpoints.
+Configure the healthcheck endpoints.
 
 ```js
 const hof = require('hof');

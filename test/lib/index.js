@@ -7,10 +7,14 @@ const promiseMatcher = sinon.match(value => {
   return value instanceof Promise;
 }, 'Not an instance of a Promise');
 
-// Stubbing request promise
-const resolvedPromiseStub = sinon.stub().returns(new Promise(resolve => resolve(JSON.stringify({
+// Stubbing request(url).promise()
+// request(url).promise() will return a pending promise
+const resolvedPromiseStub = sinon.stub().returns(
+  new Promise(resolve => resolve(JSON.stringify({
     statusCode: '200'
-  }))));
+  })))
+);
+
 const resolvedFailedPromiseStub = sinon.stub().returns(
   new Promise(resolve => resolve(JSON.stringify({
     statusCode: '400'
@@ -22,17 +26,19 @@ const rejectedPromiseStub = sinon.stub().returns(
   })))
 );
 
+// mock urls
 const success = '/success';
 const success2 = '/success/2';
-const rejected = '/rejected';
-const failed = '/failed';
+const rejection = '/rejection';
+const failure = '/failure';
 
 const requestStub = sinon.stub();
 
+// calling request with different mock urls return different promises
 requestStub.withArgs(success).returns({promise: resolvedPromiseStub});
 requestStub.withArgs(success2).returns({promise: resolvedPromiseStub});
-requestStub.withArgs(rejected).returns({promise: rejectedPromiseStub});
-requestStub.withArgs(failed).returns({promise: resolvedFailedPromiseStub});
+requestStub.withArgs(rejection).returns({promise: rejectedPromiseStub});
+requestStub.withArgs(failure).returns({promise: resolvedFailedPromiseStub});
 
 const cache = require('../../lib/cache');
 
@@ -40,8 +46,7 @@ const healthMiddleware = proxyquire('../../lib', {
   'request-promise-native': requestStub
 });
 
-
-describe('./lib/health', () => {
+describe('hof-middleware-healthcheck', () => {
 
   it('returns a middleware function', () => {
     healthMiddleware().should.be.a('function');
@@ -84,8 +89,10 @@ describe('./lib/health', () => {
 
     it('does not make a request if the default 1000ms interval has not passed', (done) => {
       // add the success url to the cache with a time lower than the future time
-      // future time = now + interval (default = 1000ms);
-      cache.set(success, Date.now());
+      // future time = now + interval (interval default = 1000ms);
+      cache.set(success, {
+        expires: Date.now()
+      });
       const options = {
         health: [{
           url: success
@@ -99,8 +106,10 @@ describe('./lib/health', () => {
       });
     });
 
-    it('default interval can be optionally overridden', (done) => {
-      cache.set(success, Date.now());
+    it('the default interval can be optionally overridden', (done) => {
+      cache.set(success, {
+        expires: Date.now()
+      });
       const options = {
         health: [{
           url: success,
@@ -119,8 +128,114 @@ describe('./lib/health', () => {
       });
     });
 
+    it('uses the cached promise if it has not been resolved', (done) => {
+      // set the cached promise
+      const promise = Promise;
+      cache.set(success, {
+        expires: Date.now(),
+        promise: promise
+      });
+      const options = {
+        health: [{
+          url: success,
+          interval: 0
+        }]
+      };
+      // move the clock on so the internal current time
+      // is greater than the cached current time
+      clock.tick(10);
+
+      middleware = healthMiddleware(options.health);
+
+      return middleware(req, res, (err) => {
+        Promise.all.should.have.been.calledWith([promise]);
+        should.not.exist(err);
+        done();
+      });
+    });
+
+    it('removes all cached promises after they have been resolved', (done) => {
+      // set the cached promise
+      const promise = Promise;
+      cache.set(success, {
+        expires: Date.now(),
+        promise: promise
+      });
+      const options = {
+        health: [{
+          url: success,
+          interval: 0
+        }]
+      };
+      // move the clock on so the internal current time
+      // is greater than the cached current time
+      clock.tick(10);
+
+      middleware = healthMiddleware(options.health);
+
+      return middleware(req, res, (err) => {
+        should.equal(cache.get(success).promise, undefined);
+        should.not.exist(err);
+        done();
+      });
+    });
+
+    it('uses the cached promise if it has not been rejected', (done) => {
+      // set the cached promise
+      const promise = Promise;
+      cache.set(failure, {
+        expires: Date.now(),
+        promise: promise
+      });
+      const options = {
+        health: [{
+          url: failure,
+          interval: 0
+        }]
+      };
+      // move the clock on so the internal current time
+      // is greater than the cached current time
+      clock.tick(10);
+
+      middleware = healthMiddleware(options.health);
+
+      return middleware(req, res, (err) => {
+        Promise.all.should.have.been.calledWith([promise]);
+        should.not.exist(err);
+        done();
+      });
+    });
+
+    it('removes all cached promises after any have been rejected', (done) => {
+      // set the cached promise
+      const promise = Promise;
+      cache.set(failure, {
+        expires: Date.now(),
+        promise: promise
+      });
+      const options = {
+        health: [{
+          url: failure,
+          interval: 0
+        }]
+      };
+      // move the clock on so the internal current time
+      // is greater than the cached current time
+      clock.tick(10);
+
+      middleware = healthMiddleware(options.health);
+
+      return middleware(req, res, (err) => {
+        should.equal(cache.get(failure).promise, undefined);
+        should.not.exist(err);
+        done();
+      });
+    });
+
     it('calls next without an error when all health urls are resolved successfully', (done) => {
-      cache.set(success, Date.now());
+      cache.set(success, {
+        expires: Date.now()
+      });
       const options = {
         health: [{
           url: success,
@@ -143,11 +258,15 @@ describe('./lib/health', () => {
     });
 
     it('calls next with `UNHEALTHY` error if a health url is rejected', (done) => {
-      cache.set(success, Date.now());
-      cache.set(rejected, Date.now());
+      cache.set(success, {
+        expires: Date.now()
+      });
+      cache.set(rejection, {
+        expires: Date.now()
+      });
       const options = {
         health: [{
-          url: rejected,
+          url: rejection,
           interval: 0
         }, {
           url: success,
@@ -168,12 +287,16 @@ describe('./lib/health', () => {
     });
 
     it('calls next with `UNHEALTHY` error if a health url is resolved with an error', (done) => {
-      cache.set(success, Date.now());
-      cache.set(failed, Date.now());
+      cache.set(success, {
+        expires: Date.now()
+      });
+      cache.set(failure, {
+        expires: Date.now()
+      });
 
       const options = {
         health: [{
-          url: failed,
+          url: failure,
           interval: 0
         }, {
           url: success,
@@ -232,7 +355,7 @@ describe('./lib/health', () => {
     it('rejected requests are logged with `error`', (done) => {
       const options = {
         health: [{
-          url: rejected,
+          url: rejection,
           interval: 0
         }]
       };
