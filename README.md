@@ -1,4 +1,4 @@
-HOF Middleware Healthcheck
+HOF Middleware Healthcheck [![Build Status](https://www.travis-ci.org/UKHomeOfficeForms/hof-middleware-healthcheck.svg?branch=master)](https://www.travis-ci.org/UKHomeOfficeForms/hof-middleware-healthcheck)
 ==========================
 
 Execute regular health checks against the API endpoints in a HOF service
